@@ -1,0 +1,46 @@
+{
+  "name": "web-advanced-backend",
+  "version": "1.0.0",
+  "description": "Template for the backend of module 2.1 Web Advanced for Saxion ACT HBO-IT",
+  "main": "./src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env.prod ./src/index.js",
+    "dev": "node --env-file=.env.dev --watch ./src/index.js",
+    "seed": "node --env-file=.env.dev ./src/seed.js",
+    "lint": "run-s \"lint:*\"",
+    "lint:oxlint": "oxlint .",
+    "lint:eslint": "eslint ./src",
+    "format": "oxfmt src/",
+    "test": "vitest",
+    "test:report": "vitest --reporter=html"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "openapi-to-postmanv2": "^6.3.3",
+    "sequelize": "^6.37.8",
+    "sqlite3": "^6.0.1",
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@vitest/ui": "^4.1.11",
+    "eslint": "^10.9.1",
+    "eslint-plugin-oxlint": "^1.80.0",
+    "globals": "^17.11.0",
+    "npm-run-all2": "^9.0.3",
+    "oxfmt": "^0.65.0",
+    "oxlint": "^1.80.0",
+    "supertest": "^7.2.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": "^22.18.0 || >=24.12.0"
+  }
+}

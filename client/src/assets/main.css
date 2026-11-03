@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Shared native form elements use Tailwind utilities; layout utilities live in Vue templates. */
+@layer base {
+  body { @apply m-0 bg-slate-50 font-sans text-slate-800; }
+  h2 { @apply mb-3 mt-7 text-xl font-semibold; }
+  a { @apply text-blue-800 underline underline-offset-2; }
+  label { @apply mb-3 flex flex-col gap-1; }
+  input:not([type="checkbox"]), select { @apply w-full max-w-xs rounded border border-slate-400 bg-white px-3 py-2; }
+  input[type="checkbox"] { @apply size-4 accent-blue-700; }
+  button { @apply mb-3 cursor-pointer rounded border border-blue-300 bg-blue-50 px-3 py-2 text-blue-900 hover:bg-blue-100 disabled:cursor-wait disabled:opacity-50; }
+  form { @apply mb-4; }
+  [role="status"] { @apply my-3 whitespace-pre-wrap font-semibold; }
+  :focus-visible { @apply outline-2 outline-offset-2 outline-blue-700; }
+}
