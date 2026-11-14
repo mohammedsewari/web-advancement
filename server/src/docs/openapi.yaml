@@ -1,308 +1,283 @@
 openapi: 3.0.3
+
 info:
-  title: School Locker Reservation API
+  title: Train Locker Reservation API
   version: 1.0.0
-  description: >
-    Minimal REST API for the HBO-ICT 2.1 Web Advanced Locker Reservation System.
-    Supports JWT Bearer authentication, role-based access control (USER, ADMIN),
-    atomic multi-locker bookings, and Server-Sent Events (SSE) for live availability updates.
+  description: |
+    API for the Train Locker Reservation system.
+    Users can register, login, browse lockers and make reservations.
+    Admins can manage lockers and user accounts.
+    Full documentation available at /api-docs.
 
 servers:
-  - url: /api
-    description: Local Express API base path
+  - url: http://localhost:3000
+    description: Local development server
 
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: Paste the JWT token returned by /auth/login or /auth/register.
-
-  schemas:
-    Credentials:
-      type: object
-      required:
-        - email
-        - password
-      properties:
-        email:
-          type: string
-          format: email
-          example: user@example.com
-        password:
-          type: string
-          minLength: 8
-          maxLength: 128
-          example: DemoPass123!
-
-    UserPublic:
-      type: object
-      properties:
-        id:
-          type: integer
-          example: 1
-        email:
-          type: string
-          format: email
-          example: user@example.com
-        roles:
-          type: array
-          items:
-            type: string
-            enum: [USER, ADMIN]
-          example: [USER]
-
-    AuthResponse:
-      type: object
-      properties:
-        token:
-          type: string
-          description: Signed HS256 JWT valid for 2 hours
-        user:
-          $ref: '#/components/schemas/UserPublic'
-
-    LockerInput:
-      type: object
-      required:
-        - code
-        - size
-        - floor
-        - location
-        - maxPerUser
-      properties:
-        code:
-          type: string
-          pattern: '^[A-Z0-9]+(?:-[A-Z0-9]+)*$'
-          maxLength: 30
-          example: L-001
-        size:
-          type: string
-          enum: [small, medium, large]
-          example: small
-        floor:
-          type: integer
-          minimum: 0
-          maximum: 100
-          example: 1
-        location:
-          type: string
-          pattern: '^[A-Za-z0-9 -]+$'
-          maxLength: 50
-          example: A
-        maxPerUser:
-          type: integer
-          minimum: 1
-          maximum: 100
-          example: 2
-
-    LockerUpdate:
-      type: object
-      description: Any subset of editable locker fields (merged with existing values before validation).
-      properties:
-        code:
-          type: string
-          example: L-001
-        size:
-          type: string
-          enum: [small, medium, large]
-          example: large
-        floor:
-          type: integer
-          minimum: 0
-          maximum: 100
-          example: 2
-        location:
-          type: string
-          example: B
-        maxPerUser:
-          type: integer
-          minimum: 1
-          maximum: 100
-          example: 3
-
-    Locker:
-      allOf:
-        - $ref: '#/components/schemas/LockerInput'
-        - type: object
-          properties:
-            id:
-              type: integer
-              example: 1
-            available:
-              type: boolean
-              description: Included when startAt and durationMinutes query parameters are supplied.
-              example: true
-
-    BookingInput:
-      type: object
-      required:
-        - lockerIds
-        - startAt
-        - durationMinutes
-      properties:
-        lockerIds:
-          type: array
-          items:
-            type: integer
-            minimum: 1
-          minItems: 1
-          maxItems: 100
-          uniqueItems: true
-          example: [1, 2]
-        startAt:
-          type: string
-          format: date-time
-          description: Future UTC ISO-8601 timestamp ending in Z
-          example: '2027-05-01T10:00:00.000Z'
-        durationMinutes:
-          type: integer
-          minimum: 1
-          maximum: 1440
-          example: 60
-
-    Reservation:
-      type: object
-      properties:
-        id:
-          type: integer
-          example: 1
-        userId:
-          type: integer
-          example: 1
-        startAt:
-          type: string
-          format: date-time
-        endAt:
-          type: string
-          format: date-time
-        Lockers:
-          type: array
-          items:
-            $ref: '#/components/schemas/Locker'
-        User:
-          $ref: '#/components/schemas/UserPublic'
-
-    ErrorResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: Descriptive error message explaining what went wrong.
+# Tags group related endpoints together in the Swagger UI
+tags:
+  - name: Users
+    description: Register, login and manage your own account
+  - name: Lockers
+    description: Browse and manage lockers (admin can create/update/delete)
+  - name: Reservations
+    description: Make, view and cancel reservations
 
 paths:
-  /auth/register:
+
+  # ───────────────────────────────────────────
+  # USERS
+  # ───────────────────────────────────────────
+
+  /users/register:
     post:
-      summary: Register a new USER account and receive a JWT
+      tags: [Users]
+      summary: Register a new user account
+      # We SEND email + password. Server saves password as a BCrypt hash, never plain text.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Credentials'
+              $ref: '#/components/schemas/UserInput'
       responses:
         '201':
-          description: Account created and token issued
+          # 201 = "Created" — something new was made in the database
+          description: Account created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthResponse'
+                $ref: '#/components/schemas/User'
         '400':
-          description: Invalid email format or password length
+          description: Invalid input (e.g. missing email or weak password)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/Error'
         '409':
-          description: Email already exists
+          # 409 = "Conflict" — email already exists
+          description: Email address is already registered
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/Error'
 
-  /auth/login:
+  /users/login:
     post:
-      summary: Log in with existing credentials and receive a JWT
+      tags: [Users]
+      summary: Login and receive a JWT token
+      # We SEND email + password. Server checks BCrypt hash and returns a JWT wristband.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Credentials'
+              $ref: '#/components/schemas/UserInput'
       responses:
         '200':
-          description: Authenticated successfully
+          # 200 = "OK" — nothing was created, we just got back a token
+          description: Login successful, returns JWT token
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthResponse'
-        '400':
-          description: Invalid email or password format
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
         '401':
-          description: Incorrect email or password
+          # 401 = "Unauthorized" — server doesn't know who you are
+          description: Invalid email or password
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/Error'
+
+  /users:
+    get:
+      tags: [Users]
+      summary: Get all users (admin only)
+      # Middleware checks JWT and role=admin before this runs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: email
+          in: query
+          description: Filter users by email (FR-09 — search a specific user)
+          schema:
+            type: string
+          example: john@example.com
+      responses:
+        '200':
+          description: List of all users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          description: No token provided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          # 403 = "Forbidden" — server knows you, but you're not an admin
+          description: You are not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /users/{id}:
+    get:
+      tags: [Users]
+      summary: Get a single user by id (admin or own account)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          example: 1
+      responses:
+        '200':
+          description: The requested user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      tags: [Users]
+      summary: Update your own account details (US-04 — manage personal data)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserInput'
+      responses:
+        '200':
+          description: Account updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: You can only update your own account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [Users]
+      summary: Deactivate a user account (admin only — US-10)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '204':
+          # 204 = "No Content" — success but nothing to send back
+          description: User account deactivated
+        '403':
+          description: You are not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ───────────────────────────────────────────
+  # LOCKERS
+  # ───────────────────────────────────────────
 
   /lockers:
     get:
-      summary: Public locker list with optional search, attribute filters, and interval availability
+      tags: [Lockers]
+      summary: Get all lockers with optional filtering (US-02, FR-01, FR-06)
+      # No auth needed — anyone can browse lockers
       parameters:
-        - name: code
+        - name: station
           in: query
-          description: Exact human-readable locker code (e.g. L-001)
+          description: Filter by station name (NFR-04 — at least 3 filterable attributes)
           schema:
             type: string
+          example: Amsterdam Centraal
         - name: size
           in: query
-          description: Filter by locker size (small, medium, large)
+          description: Filter by locker size (small / medium / large)
           schema:
             type: string
             enum: [small, medium, large]
-        - name: floor
+        - name: available
           in: query
-          description: Filter by floor number (0-100)
+          description: Filter to only show available lockers
           schema:
-            type: integer
-        - name: location
+            type: boolean
+          example: true
+        - name: sortBy
           in: query
-          description: Filter by wing/location (e.g. A, B)
-          schema:
-            type: string
-        - name: startAt
-          in: query
-          description: Future UTC ISO timestamp (requires durationMinutes to compute availability)
+          description: Sort results (NFR-13)
           schema:
             type: string
-            format: date-time
-        - name: durationMinutes
+            enum: [station, size, price]
+        - name: limit
           in: query
-          description: Duration in whole minutes (1-1440, requires startAt to compute availability)
+          description: Limit number of results (NFR-14)
           schema:
             type: integer
+            minimum: 1
+          example: 10
       responses:
         '200':
-          description: Array of matching lockers
+          description: List of lockers matching the filters
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/Locker'
-        '400':
-          description: Invalid filter parameter or invalid time interval
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      summary: 'ADMIN: Create a new locker'
+      tags: [Lockers]
+      summary: Create a new locker (admin only — FR-14, US-07)
       security:
         - bearerAuth: []
       requestBody:
@@ -313,23 +288,28 @@ paths:
               $ref: '#/components/schemas/LockerInput'
       responses:
         '201':
-          description: Locker created
+          description: Locker created successfully
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Locker'
         '400':
-          description: Validation error
-        '401':
-          description: Missing, invalid, or expired JWT
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
-          description: ADMIN role required
-        '409':
-          description: Locker code already exists
+          description: You are not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /lockers/{id}:
     get:
-      summary: Read one locker by numeric ID
+      tags: [Lockers]
+      summary: Get a single locker by id (FR-10 — search specific item)
       parameters:
         - name: id
           in: path
@@ -339,18 +319,21 @@ paths:
             minimum: 1
       responses:
         '200':
-          description: Locker details
+          description: The requested locker
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Locker'
-        '400':
-          description: ID is not a positive integer
         '404':
           description: Locker not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
-    patch:
-      summary: 'ADMIN: Update editable locker fields'
+    put:
+      tags: [Lockers]
+      summary: Update a locker (admin only — FR-14)
       security:
         - bearerAuth: []
       parameters:
@@ -365,27 +348,30 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LockerUpdate'
+              $ref: '#/components/schemas/LockerInput'
       responses:
         '200':
-          description: Updated locker
+          description: Locker updated successfully
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Locker'
-        '400':
-          description: Invalid ID or field format
-        '401':
-          description: Missing, invalid, or expired JWT
         '403':
-          description: ADMIN role required
+          description: You are not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Locker not found
-        '409':
-          description: Duplicate locker code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
     delete:
-      summary: 'ADMIN: Delete an unreserved locker'
+      tags: [Lockers]
+      summary: Delete a locker (admin only — FR-14)
       security:
         - bearerAuth: []
       parameters:
@@ -396,73 +382,87 @@ paths:
             type: integer
             minimum: 1
       responses:
-        '200':
+        '204':
           description: Locker deleted
-        '400':
-          description: Invalid ID
-        '401':
-          description: Missing, invalid, or expired JWT
         '403':
-          description: ADMIN role required
+          description: You are not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Locker not found
-        '409':
-          description: Reserved locker cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ───────────────────────────────────────────
+  # RESERVATIONS
+  # ───────────────────────────────────────────
 
   /reservations:
-    post:
-      summary: 'USER: Atomically reserve one or multiple lockers'
+    get:
+      tags: [Reservations]
+      summary: Get reservations — own ones for users, all for admins (US-03, US-08)
       security:
         - bearerAuth: []
+      parameters:
+        - name: lockerId
+          in: query
+          description: Filter by locker (admin — FR-11, US-08)
+          schema:
+            type: integer
+        - name: userId
+          in: query
+          description: Filter by user (admin only)
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of reservations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Reservation'
+        '401':
+          description: Not logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags: [Reservations]
+      summary: Create one or more reservations (US-05, US-12, FR-07, FR-12)
+      security:
+        - bearerAuth: []
+      # US-05 says reserve multiple at once — so we accept an array
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/BookingInput'
+              type: object
+              properties:
+                lockerIds:
+                  type: array
+                  items:
+                    type: integer
+                  example: [1, 2]
+                startTime:
+                  type: string
+                  format: date-time
+                  example: "2026-11-20T09:00:00Z"
+                duration:
+                  type: integer
+                  description: Duration in hours (NFR-02)
+                  example: 4
       responses:
         '201':
-          description: Reservation created atomically
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Reservation'
-        '400':
-          description: Invalid lockerIds, past/invalid startAt, or invalid durationMinutes
-        '401':
-          description: Missing, invalid, or expired JWT
-        '403':
-          description: USER role required (admin-only accounts cannot reserve)
-        '404':
-          description: One or more selected lockers do not exist
-        '409':
-          description: Overlapping booking conflict or simultaneous per-kind limit exceeded
-
-    get:
-      summary: 'ADMIN: List or filter reservations by reservation ID, locker ID, or locker code'
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: query
-          description: Filter by reservation ID
-          schema:
-            type: integer
-            minimum: 1
-        - name: lockerId
-          in: query
-          description: Filter reservations that include this numeric locker ID
-          schema:
-            type: integer
-            minimum: 1
-        - name: code
-          in: query
-          description: Filter reservations that include this human-readable locker code (e.g. L-001)
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Matching reservations including associated Lockers and User email
+          description: Reservation(s) created successfully
           content:
             application/json:
               schema:
@@ -470,34 +470,22 @@ paths:
                 items:
                   $ref: '#/components/schemas/Reservation'
         '400':
-          description: Invalid filter parameter
-        '401':
-          description: Missing, invalid, or expired JWT
-        '403':
-          description: ADMIN role required
-
-  /reservations/my:
-    get:
-      summary: 'USER: List own reservations (scoped to authenticated JWT subject)'
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Reservations belonging to the authenticated user
+          description: Invalid input or locker not available at that time
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Reservation'
+                $ref: '#/components/schemas/Error'
         '401':
-          description: Missing, invalid, or expired JWT
-        '403':
-          description: USER role required
+          description: Not logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /reservations/{id}:
     get:
-      summary: 'ADMIN: Get a single reservation by ID'
+      tags: [Reservations]
+      summary: Get a single reservation by id (FR-11)
       security:
         - bearerAuth: []
       parameters:
@@ -509,60 +497,200 @@ paths:
             minimum: 1
       responses:
         '200':
-          description: Reservation found
+          description: The requested reservation
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Reservation'
-        '400':
-          description: Invalid ID
-        '401':
-          description: Missing, invalid, or expired JWT
-        '403':
-          description: ADMIN role required
         '404':
           description: Reservation not found
-
-  /users:
-    get:
-      summary: 'ADMIN: Search for a user by exact normalized email'
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: email
-          in: query
-          required: true
-          schema:
-            type: string
-            format: email
-      responses:
-        '200':
-          description: Matching user accounts (id, email, roles; never passwordHash)
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/UserPublic'
-        '400':
-          description: Missing or invalid email query parameter
-        '401':
-          description: Missing, invalid, or expired JWT
-        '403':
-          description: ADMIN role required
+                $ref: '#/components/schemas/Error'
 
-  /events:
-    get:
-      summary: Public Server-Sent Events (SSE) stream for live locker availability updates
-      description: >
-        Keeps an open HTTP text/event-stream connection. Emits an initial `ready` event
-        and broadcasts an `availability` event with empty payload `{}` whenever a reservation
-        is created or a locker is created, updated, or deleted. Designed for a single-server deployment.
+    delete:
+      tags: [Reservations]
+      summary: Cancel a reservation (US-06 — only allowed 24h in advance, FR-08)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
       responses:
-        '200':
-          description: Open SSE stream (`text/event-stream`)
+        '204':
+          description: Reservation cancelled
+        '400':
+          description: Cannot cancel within 24 hours of start time
           content:
-            text/event-stream:
+            application/json:
               schema:
-                type: string
-                example: "retry: 3000\nevent: ready\ndata: {}\n\n"
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: You can only cancel your own reservations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+# ───────────────────────────────────────────
+# REUSABLE SCHEMAS (used with $ref above)
+# ───────────────────────────────────────────
+
+components:
+  # This tells Swagger that protected endpoints need a Bearer token in the header
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    # What we SEND when registering or logging in
+    UserInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        password:
+          type: string
+          minLength: 8
+          example: secret123
+
+    # What we GET BACK when reading a user (password never comes back!)
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          example: 1
+        email:
+          type: string
+          example: john@example.com
+        role:
+          type: string
+          enum: [user, admin]
+          example: user
+        isActive:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+
+    # What we SEND when creating or updating a locker
+    LockerInput:
+      type: object
+      required: [number, station, size, pricePerHour]
+      properties:
+        number:
+          type: string
+          description: Human readable unique identifier (NFR-01)
+          example: A-042
+        station:
+          type: string
+          example: Amsterdam Centraal
+        size:
+          type: string
+          enum: [small, medium, large]
+          example: medium
+        pricePerHour:
+          type: number
+          example: 1.50
+        maxReservationsAtOnce:
+          type: integer
+          description: Max times this locker can be reserved simultaneously (US-09)
+          example: 1
+
+    # What we GET BACK when reading a locker
+    Locker:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          example: 1
+        number:
+          type: string
+          example: A-042
+        station:
+          type: string
+          example: Amsterdam Centraal
+        size:
+          type: string
+          enum: [small, medium, large]
+          example: medium
+        pricePerHour:
+          type: number
+          example: 1.50
+        maxReservationsAtOnce:
+          type: integer
+          example: 1
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+
+    # What we GET BACK when reading a reservation
+    Reservation:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          example: 1
+        userId:
+          type: integer
+          example: 3
+        lockerId:
+          type: integer
+          example: 1
+        startTime:
+          type: string
+          format: date-time
+          example: "2026-11-20T09:00:00Z"
+        duration:
+          type: integer
+          description: Duration in hours
+          example: 4
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+
+    # The shape every error response uses
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Locker with id 99 not found
+      required: [message]
